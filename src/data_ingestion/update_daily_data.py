@@ -1,0 +1,1 @@
+# Fetch today’s NEPSE daily price table and append today’s row to each company CSV if it does not already exist.
