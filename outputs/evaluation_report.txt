@@ -1,0 +1,27 @@
+
+NEPSE Model Evaluation Report
+=============================
+
+Model Task:
+Predict whether the next trading day's closing price will increase or not.
+
+Target:
+1 = Next day's close price increased
+0 = Next day's close price did not increase
+
+Evaluation Metrics:
+Accuracy  : 0.5531
+Precision : 0.4597
+Recall    : 0.2945
+F1 Score  : 0.3590
+
+Detailed Classification Report:
+              precision    recall  f1-score   support
+
+           0       0.59      0.74      0.66     30543
+           1       0.46      0.29      0.36     22572
+
+    accuracy                           0.55     53115
+   macro avg       0.52      0.52      0.51     53115
+weighted avg       0.53      0.55      0.53     53115
+
