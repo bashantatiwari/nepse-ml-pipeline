@@ -83,10 +83,10 @@ with DAG(
         python_callable=generate_and_save_prediction
     )
 
-    # Placeholder for Batch 7 Evidently step
-    monitoring_placeholder = BashOperator(
-        task_id="monitoring_placeholder",
-        bash_command="echo 'Monitoring step to be implemented'"
+    # Monitoring Step
+    run_monitoring = BashOperator(
+        task_id="run_monitoring",
+        bash_command="cd /opt/airflow && python -m src.monitoring.evidently_report || python -m src.monitoring.evidently_report"
     )
 
-    ingest_nabil_data >> preprocess_nabil_data >> generate_prediction >> monitoring_placeholder
+    ingest_nabil_data >> preprocess_nabil_data >> generate_prediction >> run_monitoring
