@@ -1,0 +1,134 @@
+version: '3.8'
+
+x-airflow-common:
+  &airflow-common
+  image: apache/airflow:2.9.1
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-columnstore:3306/airflow_db
+    - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    # Dynamically inject required Python libraries into the Airflow container
+    - _PIP_ADDITIONAL_REQUIREMENTS=pandas scikit-learn mariadb pymysql redis mlflow evidently>=0.4.0 python-dotenv
+    - PYTHONPATH=/opt/airflow
+    - MARIADB_HOST=mariadb-columnstore
+    - MARIADB_PORT=3306
+    - MARIADB_USER=${MARIADB_USER}
+    - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+    - MARIADB_DATABASE=${MARIADB_DATABASE}
+    - REDIS_HOST=redis
+    - REDIS_PORT=6379
+    - MLFLOW_TRACKING_URI=http://mlflow:5000
+  volumes:
+    - .:/opt/airflow
+  depends_on:
+    mariadb-columnstore:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
+services:
+  mariadb-columnstore:
+    # Note: Using standard MariaDB 11 as a stable, widely supported fallback for ColumnStore during coursework. 
+    # The application code treats it transparently via the same client logic.
+    image: mariadb:11.2
+    environment:
+      - MARIADB_ROOT_PASSWORD=${MARIADB_PASSWORD}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./docker/mariadb-init:/docker-entrypoint-initdb.d
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-columnstore:3306/${MARIADB_DATABASE} --default-artifact-root /app/mlruns
+    ports:
+      - "5000:5000"
+    environment:
+      - MARIADB_HOST=mariadb-columnstore
+      - MARIADB_PORT=3306
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+    volumes:
+      - .:/app
+    depends_on:
+      mariadb-columnstore:
+        condition: service_healthy
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn src.serving.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - MARIADB_HOST=mariadb-columnstore
+      - MARIADB_PORT=3306
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - .:/app
+    depends_on:
+      mariadb-columnstore:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mlflow:
+        condition: service_started
+
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common.environment
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+      # Create airflow schema locally inside MariaDB so it runs cleanly
+      _AIRFLOW_DB_CREATE_COMMAND: "CREATE DATABASE IF NOT EXISTS airflow_db;"
+    depends_on:
+      mariadb-columnstore:
+        condition: service_healthy
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  mariadb_data:
