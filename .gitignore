@@ -5,6 +5,7 @@ venv/
 .venv/
 __pycache__/
 *.pyc
+*.pyo
 
 # Airflow local files
 airflow/airflow.db
@@ -16,6 +17,9 @@ airflow/simple_auth_manager_passwords.json.generated
 
 # Data and generated outputs
 data/processed/*.csv
+data/processed/*.parquet
+data/reference/*.csv
+data/reference/*.parquet
 models/*.pkl
 *.pkl
 
