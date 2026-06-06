@@ -5,9 +5,9 @@ import pandas as pd
 from src.config.settings import PROCESSED_DATA_DIR, RAW_DATA_DIR
 from src.storage.mariadb_client import MariaDBClient
 from src.storage.redis_client import RedisClient
+from src.utils.logger import get_logger
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def get_raw_data() -> pd.DataFrame:

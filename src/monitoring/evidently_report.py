@@ -44,7 +44,7 @@ def fetch_data() -> pd.DataFrame:
 def run_evidently_monitoring():
     """Generates an Evidently HTML report comparing current vs reference data."""
     if not EVIDENTLY_AVAILABLE:
-        logger.error("Evidently AI is not installed. Please install 'evidently>=0.2.0'.")
+        logger.error("Evidently AI is not installed. Please install 'evidently>=0.4.0,<0.5.0'.")
         return
 
     df = fetch_data()

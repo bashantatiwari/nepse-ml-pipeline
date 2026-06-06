@@ -11,9 +11,9 @@ from src.registry.mlflow_utils import MLflowManager
 from src.storage.mariadb_client import MariaDBClient
 from src.storage.redis_client import RedisClient
 from src.training.evaluate_model import evaluate_predictions, save_evaluation_report
+from src.utils.logger import get_logger
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def fetch_processed_data() -> pd.DataFrame:

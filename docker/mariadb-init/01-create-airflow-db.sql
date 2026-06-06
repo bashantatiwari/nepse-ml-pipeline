@@ -1,0 +1,3 @@
+CREATE DATABASE IF NOT EXISTS airflow_db;
+GRANT ALL PRIVILEGES ON airflow_db.* TO 'nepse_user'@'%';
+FLUSH PRIVILEGES;
