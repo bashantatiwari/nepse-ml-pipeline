@@ -24,7 +24,7 @@ class MariaDBClient:
         self.database = MARIADB_DATABASE
 
     @contextmanager
-    def get_connection(self) -> Generator[mariadb.connection, None, None]:
+    def get_connection(self) -> Generator[mariadb.Connection, None, None]:
         """Provides a transactional scope around a series of operations."""
         conn = None
         try:
