@@ -13,7 +13,7 @@ x-airflow-env: &airflow-env
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   AIRFLOW__WEBSERVER__SECRET_KEY: "nabil-mlops-secret"
   # Inject pipeline dependencies into the Airflow container at runtime
-  _PIP_ADDITIONAL_REQUIREMENTS: "pandas scikit-learn joblib mariadb pymysql redis mlflow evidently>=0.4.0,<0.5.0 python-dotenv requests"
+  _PIP_ADDITIONAL_REQUIREMENTS: "pandas scikit-learn joblib mariadb pymysql redis mlflow evidently>=0.4.0,<0.5.0 python-dotenv requests"  
   PYTHONPATH: "/opt/airflow"
   MARIADB_HOST: "mariadb-columnstore"
   MARIADB_PORT: "3306"
