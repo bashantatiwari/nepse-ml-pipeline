@@ -28,7 +28,7 @@ class MLflowManager:
         """Checks if the MLflow server is reachable without crashing the app."""
         try:
             # Quick HTTP check to see if MLflow server is responding
-            response = requests.get(f"{self.tracking_uri}/api/2.0/mlflow/experiments/search", timeout=2)
+            response = requests.get(f"{self.tracking_uri}/health", timeout=2)
             if response.status_code == 200:
                 return True
             return False

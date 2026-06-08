@@ -54,13 +54,15 @@ def fetch_processed_data() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def split_data(df: pd.DataFrame, features: list, target: str):
+def split_data(df: pd.DataFrame, features: list, target: str, lookback_years: int = 3):
     """Chronological 80/20 train/test split. Does not shuffle."""
     # Ensure strict chronological order
     if "published_date" in df.columns:
         df["published_date"] = pd.to_datetime(df["published_date"])
         df = df.sort_values("published_date").reset_index(drop=True)
     
+    cutoff = df["published_date"].max() - pd.DateOffset(years=lookback_years)
+    df = df[df["published_date"] >= cutoff].reset_index(drop=True)
     split_index = int(len(df) * 0.8)
     
     train_df = df.iloc[:split_index]
@@ -89,7 +91,7 @@ def train_and_evaluate():
     target = "next_close"
     
     # Exclude identifiers and future/target variables from features
-    exclude_cols = ["id", "symbol", "published_date", "status", "next_close", "target_change", "target_pct_change"]
+    exclude_cols = ["id", "symbol", "published_date", "status", "next_close", "target_change", "target_pct_change", "percent_change"]
     features = [col for col in df.columns if col not in exclude_cols]
     
     # Handle possible NaN generated in DB

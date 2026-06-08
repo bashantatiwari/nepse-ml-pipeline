@@ -1,4 +1,3 @@
-version: '3.8'
 
 # ---------------------------------------------------------------------------
 # Shared environment block for all Airflow services.
@@ -8,12 +7,12 @@ version: '3.8'
 # ---------------------------------------------------------------------------
 x-airflow-env: &airflow-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/airflow/dags
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-columnstore:3306/airflow_db"
   AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho="
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   AIRFLOW__WEBSERVER__SECRET_KEY: "nabil-mlops-secret"
-  # Inject pipeline dependencies into the Airflow container at runtime
-  _PIP_ADDITIONAL_REQUIREMENTS: "pandas scikit-learn joblib mariadb pymysql redis mlflow evidently>=0.4.0,<0.5.0 python-dotenv requests"  
+  # Inject pipeline dependencies into the Airflow container at runtime  
   PYTHONPATH: "/opt/airflow"
   MARIADB_HOST: "mariadb-columnstore"
   MARIADB_PORT: "3306"
@@ -23,6 +22,8 @@ x-airflow-env: &airflow-env
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  MLFLOW_S3_IGNORE_TLS: "true"
+  GIT_PYTHON_REFRESH: "quiet"
 
 x-airflow-volumes: &airflow-volumes
   - .:/opt/airflow
@@ -80,7 +81,7 @@ services:
       --host 0.0.0.0
       --port 5000
       --backend-store-uri "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-columnstore:3306/${MARIADB_DATABASE}"
-      --default-artifact-root /app/mlruns
+      --default-artifact-root /mlflow/mlruns
     ports:
       - "5000:5000"
     environment:
@@ -89,8 +90,10 @@ services:
       MARIADB_USER: "${MARIADB_USER}"
       MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
       MARIADB_DATABASE: "${MARIADB_DATABASE}"
+      MLFLOW_SERVER_ALLOWED_HOSTS: "*"
     volumes:
       - .:/app
+      - mlflow_artifacts:/mlflow/mlruns
     depends_on:
       mariadb-columnstore:
         condition: service_healthy
@@ -126,7 +129,10 @@ services:
   # Airflow — one-time initialisation job (runs db migrate + creates admin user)
   # ---------------------------------------------------------------------------
   airflow-init:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID}:0"
     environment:
       <<: *airflow-env
       _AIRFLOW_DB_MIGRATE: "true"
@@ -136,17 +142,19 @@ services:
     volumes: *airflow-volumes
     # Run db migrate (Airflow 2.7+) then create the admin web user.
     # Falls back gracefully: 'db migrate' is preferred over deprecated 'db init'.
-    command: >
-      bash -c "
+    command: 
+      - bash
+      - -c
+      - |
         airflow db migrate &&
-        airflow users create
-          --username airflow
-          --password airflow
-          --firstname Admin
-          --lastname User
-          --role Admin
+        airflow users create \
+          --username airflow \
+          --password airflow \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
           --email admin@example.com
-      "
+
     depends_on:
       mariadb-columnstore:
         condition: service_healthy
@@ -155,7 +163,10 @@ services:
   # Airflow webserver
   # ---------------------------------------------------------------------------
   airflow-webserver:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID}:0"
     environment:
       <<: *airflow-env
     volumes: *airflow-volumes
@@ -176,7 +187,10 @@ services:
   # Airflow scheduler
   # ---------------------------------------------------------------------------
   airflow-scheduler:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID}:0"
     environment:
       <<: *airflow-env
     volumes: *airflow-volumes
@@ -187,3 +201,4 @@ services:
 
 volumes:
   mariadb_data:
+  mlflow_artifacts:

@@ -18,35 +18,35 @@ logger = logging.getLogger(__name__)
 class MariaDBClient:
     def __init__(self):
         self.host = MARIADB_HOST
-        self.port = MARIADB_PORT
+        self.port = int(MARIADB_PORT)
         self.user = MARIADB_USER
         self.password = MARIADB_PASSWORD
         self.database = MARIADB_DATABASE
 
     @contextmanager
     def get_connection(self) -> Generator[mariadb.Connection, None, None]:
-        """Provides a transactional scope around a series of operations."""
         conn = None
         try:
             conn = mariadb.connect(
                 host=self.host,
                 port=self.port,
                 user=self.user,
-                password=self.password
+                password=self.password,
+                database=self.database,
             )
-            cursor = conn.cursor()
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
-            conn.database = self.database
+            conn.autocommit = False
             yield conn
         except mariadb.Error as e:
-            logger.error(f"Error connecting to MariaDB: {e}")
+            logger.error(f"MariaDB connection error: {e}")
+            if conn:
+                conn.rollback()
             raise
         finally:
             if conn:
                 conn.close()
 
     def init_tables(self):
-        """Creates required tables for the ML pipeline if they do not exist."""
+        """Creates required application tables if they do not exist."""
         queries = [
             """
             CREATE TABLE IF NOT EXISTS raw_nabil_prices (
@@ -60,8 +60,9 @@ class MariaDBClient:
                 percent_change DOUBLE,
                 traded_quantity DOUBLE,
                 traded_amount DOUBLE,
-                status VARCHAR(20)
-            );
+                status VARCHAR(20),
+                UNIQUE KEY uq_symbol_date (symbol, published_date)
+            )
             """,
             """
             CREATE TABLE IF NOT EXISTS processed_nabil_features (
@@ -86,8 +87,9 @@ class MariaDBClient:
                 rolling_std_7 DOUBLE,
                 next_close DOUBLE,
                 target_change DOUBLE,
-                target_pct_change DOUBLE
-            );
+                target_pct_change DOUBLE,
+                UNIQUE KEY uq_symbol_date (symbol, published_date)
+            )
             """,
             """
             CREATE TABLE IF NOT EXISTS predictions (
@@ -99,14 +101,14 @@ class MariaDBClient:
                 predicted_change DOUBLE,
                 predicted_pct_change DOUBLE,
                 model_version VARCHAR(50),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_symbol_date (symbol, prediction_date)
+            )
             """
         ]
-        
         with self.get_connection() as conn:
             cursor = conn.cursor()
             for q in queries:
                 cursor.execute(q)
             conn.commit()
-            logger.info("Database tables initialized successfully.")
+            logger.info("Tables initialized successfully.")

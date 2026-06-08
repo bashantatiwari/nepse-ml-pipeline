@@ -35,96 +35,52 @@ def load_data():
 
     df = pd.read_csv(csv_file)
     df = clean_column_names(df)
-
     df["symbol"] = "NABIL"
 
-    # Convert date column
     df["published_date"] = pd.to_datetime(
-        df["published_date"],
-        errors="coerce"
+        df["published_date"], errors="coerce"
     ).dt.date
 
-    # Drop rows missing critical values
     df = df.dropna(subset=["published_date", "close"])
 
+    # Drop duplicates within the CSV itself before inserting
+    df = df.drop_duplicates(subset=["symbol", "published_date"], keep="last")
+
     client = MariaDBClient()
+    client.init_tables()
 
-    try:
-        client.init_tables()
-    except Exception as e:
-        logger.error(f"Failed to initialize tables: {e}")
-        return
+    logger.info(f"Total rows to process: {len(df)}")
 
-    logger.info(f"Total rows read from CSV: {len(df)}")
+    records = []
+    for _, row in df.iterrows():
+        records.append((
+            row["symbol"],
+            row["published_date"],
+            None if pd.isna(row.get("open"))             else row.get("open"),
+            None if pd.isna(row.get("high"))             else row.get("high"),
+            None if pd.isna(row.get("low"))              else row.get("low"),
+            None if pd.isna(row.get("close"))            else row.get("close"),
+            None if pd.isna(row.get("percent_change"))   else row.get("percent_change"),
+            None if pd.isna(row.get("traded_quantity"))  else row.get("traded_quantity"),
+            None if pd.isna(row.get("traded_amount"))    else row.get("traded_amount"),
+            None if pd.isna(row.get("status"))           else row.get("status"),
+        ))
 
-    try:
-        with client.get_connection() as conn:
-            cursor = conn.cursor()
+    # INSERT IGNORE silently skips rows that violate the unique key
+    insert_query = """
+        INSERT IGNORE INTO raw_nabil_prices (
+            symbol, published_date, open, high, low, close,
+            percent_change, traded_quantity, traded_amount, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
 
-            # Get existing dates to avoid duplicates
-            cursor.execute(
-                "SELECT published_date FROM raw_nabil_prices WHERE symbol = 'NABIL'"
-            )
-            existing_dates = {row[0] for row in cursor.fetchall()}
-
-            records_to_insert = []
-            skipped_count = 0
-
-            for _, row in df.iterrows():
-                if row["published_date"] in existing_dates:
-                    skipped_count += 1
-                    continue
-
-                record = tuple(
-                    None if pd.isna(v) else v
-                    for v in (
-                        row["symbol"],
-                        row["published_date"],
-                        row.get("open"),
-                        row.get("high"),
-                        row.get("low"),
-                        row.get("close"),
-                        row.get("percent_change"),
-                        row.get("traded_quantity"),
-                        row.get("traded_amount"),
-                        row.get("status"),
-                    )
-                )
-
-                records_to_insert.append(record)
-
-            logger.info(f"Rows skipped (already exist): {skipped_count}")
-
-            if not records_to_insert:
-                logger.info("No new rows to insert.")
-                return
-
-            insert_query = """
-                INSERT INTO raw_nabil_prices (
-                    symbol,
-                    published_date,
-                    open,
-                    high,
-                    low,
-                    close,
-                    percent_change,
-                    traded_quantity,
-                    traded_amount,
-                    status
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-
-            cursor.executemany(insert_query, records_to_insert)
-            conn.commit()
-
-            logger.info(
-                f"Rows successfully inserted: {cursor.rowcount}"
-            )
-
-    except Exception as e:
-        logger.error(f"Failed during database operation: {e}")
-        raise
+    with client.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.executemany(insert_query, records)
+        conn.commit()
+        inserted = cursor.rowcount
+        skipped = len(records) - inserted
+        logger.info(f"Inserted: {inserted} rows, Skipped (duplicates): {skipped} rows.")
 
 
 if __name__ == "__main__":
