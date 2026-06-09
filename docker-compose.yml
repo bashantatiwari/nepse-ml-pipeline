@@ -1,41 +1,35 @@
-version: '3.8'
-
-# ---------------------------------------------------------------------------
-# Shared environment block for all Airflow services.
-# All three Airflow containers (init, webserver, scheduler) reference this
-# using the YAML merge key (<<: *airflow-env). Only plain scalars are merged
-# — no nested key dot-notation, which is invalid in YAML.
-# ---------------------------------------------------------------------------
 x-airflow-env: &airflow-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
-  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-columnstore:3306/airflow_db"
+  AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/airflow/dags
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-metadata:3306/airflow_db"
   AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho="
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   AIRFLOW__WEBSERVER__SECRET_KEY: "nabil-mlops-secret"
-  # Inject pipeline dependencies into the Airflow container at runtime
-  _PIP_ADDITIONAL_REQUIREMENTS: "pandas scikit-learn joblib mariadb pymysql redis mlflow evidently>=0.4.0,<0.5.0 python-dotenv requests"  
   PYTHONPATH: "/opt/airflow"
-  MARIADB_HOST: "mariadb-columnstore"
+  MARIADB_HOST: "mariadb-metadata"
   MARIADB_PORT: "3306"
   MARIADB_USER: "${MARIADB_USER}"
   MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
   MARIADB_DATABASE: "${MARIADB_DATABASE}"
+  COLUMNSTORE_HOST: "mariadb-columnstore"
+  COLUMNSTORE_PORT: "3306"
+  COLUMNSTORE_USER: "${COLUMNSTORE_USER}"
+  COLUMNSTORE_PASSWORD: "${COLUMNSTORE_PASSWORD}"
+  COLUMNSTORE_DATABASE: "${COLUMNSTORE_DATABASE}"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  MLFLOW_S3_IGNORE_TLS: "true"
+  GIT_PYTHON_REFRESH: "quiet"
 
 x-airflow-volumes: &airflow-volumes
   - .:/opt/airflow
 
 services:
-
   # ---------------------------------------------------------------------------
-  # MariaDB (serves as both the pipeline data store and Airflow metadata DB)
-  # Service name kept as mariadb-columnstore per project requirements.
-  # Standard MariaDB 11 is used for coursework stability; ColumnStore is noted
-  # in README as the intended production target.
+  # MariaDB Metadata — standard MariaDB for Airflow + MLflow metadata
   # ---------------------------------------------------------------------------
-  mariadb-columnstore:
+  mariadb-metadata:
     image: mariadb:11.2
     environment:
       MARIADB_ROOT_PASSWORD: "${MARIADB_PASSWORD}"
@@ -43,11 +37,10 @@ services:
       MARIADB_USER: "${MARIADB_USER}"
       MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
-      - mariadb_data:/var/lib/mysql
-      # Init scripts run on first startup — creates airflow_db and grants access
-      - ./docker/mariadb-init:/docker-entrypoint-initdb.d
+      - mariadb_metadata_data:/var/lib/mysql
+      - ./docker/mariadb-metadata-init:/docker-entrypoint-initdb.d
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
@@ -57,8 +50,33 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
-  redis:
+  # MariaDB ColumnStore — analytical warehouse for pipeline tables
   # ---------------------------------------------------------------------------
+  mariadb-columnstore:
+    image: mariadb/columnstore:latest
+    entrypoint: ["/docker-entrypoint-initdb.d/docker-entrypoint-columnstore.sh"]
+    environment:
+      MARIADB_ROOT_PASSWORD: "${COLUMNSTORE_PASSWORD}"
+      MARIADB_USER: "${COLUMNSTORE_USER}"
+      MARIADB_PASSWORD: "${COLUMNSTORE_PASSWORD}"
+      MARIADB_DATABASE: "${COLUMNSTORE_DATABASE}"
+    ports:
+      - "3306:3306"
+    volumes:
+      - columnstore_data:/var/lib/mysql
+      - columnstore_cs_data:/var/lib/columnstore
+      - ./docker/columnstore-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mariadb", "-u", "root", "-p${COLUMNSTORE_PASSWORD}", "-e", "SELECT 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Redis
+  # ---------------------------------------------------------------------------
+  redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
@@ -69,7 +87,7 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
-  # MLflow tracking server — backed by MariaDB
+  # MLflow — backed by metadata MariaDB
   # ---------------------------------------------------------------------------
   mlflow:
     build:
@@ -79,24 +97,27 @@ services:
       mlflow server
       --host 0.0.0.0
       --port 5000
-      --backend-store-uri "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-columnstore:3306/${MARIADB_DATABASE}"
-      --default-artifact-root /app/mlruns
+      --backend-store-uri "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-metadata:3306/${MARIADB_DATABASE}"
+      --default-artifact-root /mlflow/mlruns
     ports:
       - "5000:5000"
     environment:
-      MARIADB_HOST: "mariadb-columnstore"
+      MARIADB_HOST: "mariadb-metadata"
       MARIADB_PORT: "3306"
       MARIADB_USER: "${MARIADB_USER}"
       MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
       MARIADB_DATABASE: "${MARIADB_DATABASE}"
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      MLFLOW_ALLOW_SERVING_UNSAFE_HOSTNAME: "true"
     volumes:
       - .:/app
+      - mlflow_artifacts:/mlflow/mlruns
     depends_on:
-      mariadb-columnstore:
+      mariadb-metadata:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
-  # FastAPI prediction server
+  # FastAPI
   # ---------------------------------------------------------------------------
   fastapi:
     build:
@@ -106,27 +127,37 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MARIADB_HOST: "mariadb-columnstore"
+      MARIADB_HOST: "mariadb-metadata"
       MARIADB_PORT: "3306"
       MARIADB_USER: "${MARIADB_USER}"
       MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
       MARIADB_DATABASE: "${MARIADB_DATABASE}"
+      COLUMNSTORE_HOST: "mariadb-columnstore"
+      COLUMNSTORE_PORT: "3306"
+      COLUMNSTORE_USER: "${COLUMNSTORE_USER}"
+      COLUMNSTORE_PASSWORD: "${COLUMNSTORE_PASSWORD}"
+      COLUMNSTORE_DATABASE: "${COLUMNSTORE_DATABASE}"
       REDIS_HOST: "redis"
       REDIS_PORT: "6379"
       MLFLOW_TRACKING_URI: "http://mlflow:5000"
     volumes:
       - .:/app
     depends_on:
+      mariadb-metadata:
+        condition: service_healthy
       mariadb-columnstore:
         condition: service_healthy
       redis:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
-  # Airflow — one-time initialisation job (runs db migrate + creates admin user)
+  # Airflow init
   # ---------------------------------------------------------------------------
   airflow-init:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID}:0"
     environment:
       <<: *airflow-env
       _AIRFLOW_DB_MIGRATE: "true"
@@ -134,28 +165,30 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: "airflow"
       _AIRFLOW_WWW_USER_PASSWORD: "airflow"
     volumes: *airflow-volumes
-    # Run db migrate (Airflow 2.7+) then create the admin web user.
-    # Falls back gracefully: 'db migrate' is preferred over deprecated 'db init'.
-    command: >
-      bash -c "
+    command:
+      - bash
+      - -c
+      - |
         airflow db migrate &&
-        airflow users create
-          --username airflow
-          --password airflow
-          --firstname Admin
-          --lastname User
-          --role Admin
+        airflow users create \
+          --username airflow \
+          --password airflow \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
           --email admin@example.com
-      "
     depends_on:
-      mariadb-columnstore:
+      mariadb-metadata:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
   # Airflow webserver
   # ---------------------------------------------------------------------------
   airflow-webserver:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID}:0"
     environment:
       <<: *airflow-env
     volumes: *airflow-volumes
@@ -176,7 +209,10 @@ services:
   # Airflow scheduler
   # ---------------------------------------------------------------------------
   airflow-scheduler:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID}:0"
     environment:
       <<: *airflow-env
     volumes: *airflow-volumes
@@ -185,5 +221,19 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data:ro
+      - ./models:/app/models:ro
+    restart: unless-stopped
+
 volumes:
-  mariadb_data:
+  mariadb_metadata_data:
+  columnstore_cs_data:
+  columnstore_data:
+  mlflow_artifacts:

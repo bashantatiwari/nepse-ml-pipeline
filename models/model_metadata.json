@@ -1,0 +1,21 @@
+{
+    "model_name": "LinearRegression",
+    "features": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "percent_change",
+        "traded_quantity",
+        "traded_amount",
+        "price_range",
+        "daily_return",
+        "close_lag_1",
+        "close_lag_3",
+        "close_lag_7",
+        "rolling_mean_7",
+        "rolling_mean_14",
+        "rolling_std_7"
+    ],
+    "rmse": 40.44720151100867
+}
