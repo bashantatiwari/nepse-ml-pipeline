@@ -1,0 +1,8 @@
+{
+    "company": "NABIL",
+    "latest_close": 520.0,
+    "predicted_next_close": 518.1,
+    "predicted_change": -1.9,
+    "predicted_pct_change": -0.37,
+    "model_version": "RandomForest"
+}
