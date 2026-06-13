@@ -99,9 +99,11 @@ services:
       --port 5000
       --backend-store-uri "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-metadata:3306/${MARIADB_DATABASE}"
       --default-artifact-root /mlflow/mlruns
+      --allowed-hosts "*"
     ports:
       - "5000:5000"
     environment:
+      MLFLOW_SERVER_ALLOWED_HOSTS: "localhost,127.0.0.1,mlflow,0.0.0.0"
       MARIADB_HOST: "mariadb-metadata"
       MARIADB_PORT: "3306"
       MARIADB_USER: "${MARIADB_USER}"

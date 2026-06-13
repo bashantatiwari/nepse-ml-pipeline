@@ -15,12 +15,23 @@ MODELS_DIR = PROJECT_ROOT / "models"
 EVALUATION_REPORTS_DIR = PROJECT_ROOT / "reports" / "evaluation"
 MONITORING_REPORTS_DIR = PROJECT_ROOT / "reports" / "monitoring"
 
-# MariaDB Settings
+# ---------------------------------------------------------------------------
+# Metadata DB — standard MariaDB (Airflow + MLflow metadata)
+# ---------------------------------------------------------------------------
 MARIADB_HOST = os.getenv("MARIADB_HOST", "localhost")
 MARIADB_PORT = int(os.getenv("MARIADB_PORT", 3306))
-MARIADB_USER = os.getenv("MARIADB_USER", "root")
-MARIADB_PASSWORD = os.getenv("MARIADB_PASSWORD", "password")
-MARIADB_DATABASE = os.getenv("MARIADB_DATABASE", "nepse_db")
+MARIADB_USER = os.getenv("MARIADB_USER", "nepse_user")
+MARIADB_PASSWORD = os.getenv("MARIADB_PASSWORD", "nepse_secure_password")
+MARIADB_DATABASE = os.getenv("MARIADB_DATABASE", "nepse_mlops")
+
+# ---------------------------------------------------------------------------
+# ColumnStore — analytical warehouse (pipeline tables)
+# ---------------------------------------------------------------------------
+COLUMNSTORE_HOST = os.getenv("COLUMNSTORE_HOST", "localhost")
+COLUMNSTORE_PORT = int(os.getenv("COLUMNSTORE_PORT", 3306))
+COLUMNSTORE_USER = os.getenv("COLUMNSTORE_USER", "nepse_user")
+COLUMNSTORE_PASSWORD = os.getenv("COLUMNSTORE_PASSWORD", "nepse_secure_password")
+COLUMNSTORE_DATABASE = os.getenv("COLUMNSTORE_DATABASE", "nepse_columnstore")
 
 # Redis Settings
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
