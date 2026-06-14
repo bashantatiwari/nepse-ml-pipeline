@@ -7,13 +7,13 @@ from src.config.settings import PROCESSED_DATA_DIR, PROJECT_ROOT
 from src.storage.columnstore_client import ColumnStoreClient
 
 try:
-    from evidently.metrics import (
+    from evidently.legacy.metrics import (
         ColumnDriftMetric,
         DatasetDriftMetric,
         DatasetMissingValuesMetric,
         RegressionQualityMetric,
     )
-    from evidently.report import Report
+    from evidently.legacy.report import Report
     EVIDENTLY_AVAILABLE = True
 except ImportError:
     EVIDENTLY_AVAILABLE = False
@@ -222,6 +222,12 @@ def save_summary(summaries, report_dir):
     combined = {
         "generated_at": now_utc(),
         "retraining_recommended": overall_retrain,
+        "config": {
+            "reference_days": REFERENCE_DAYS,
+            "current_days": CURRENT_DAYS,
+            "drift_threshold": DRIFT_THRESHOLD,
+            "rmse_threshold": RMSE_THRESHOLD,
+        },
         "checks": summaries,
     }
     json_path = report_dir / "monitoring_summary.json"

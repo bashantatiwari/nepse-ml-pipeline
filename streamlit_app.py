@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
+import json
+import joblib
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -126,6 +128,18 @@ def latest_model_info():
         "trained_at": datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
     }
 
+@st.cache_resource
+def load_model_and_metadata():
+    """Loads the trained model + its feature list for live predictions."""
+    model_path = MODELS_DIR / "best_model.joblib"
+    meta_path = MODELS_DIR / "model_metadata.json"
+    if not model_path.exists() or not meta_path.exists():
+        return None, [], "unknown"
+    model = joblib.load(model_path)
+    with open(meta_path) as f:
+        meta = json.load(f)
+    return model, meta.get("features", []), meta.get("model_name", "unknown")
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 📈 NABIL ML Pipeline")
@@ -149,6 +163,7 @@ with st.sidebar:
 df_proc = load_processed()
 df_raw  = load_raw()
 model   = latest_model_info()
+ml_model, ml_features, ml_model_name = load_model_and_metadata()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE: OVERVIEW
@@ -263,36 +278,47 @@ elif page == "📊 Predictions":
             close_df = df_view[["published_date", "close"]].set_index("published_date")
             st.line_chart(close_df, height=250, use_container_width=True)
 
-            # next_close as prediction if available
-            if "next_close" in df_view.columns:
-                st.markdown("#### Predicted Next Close vs Actual Close")
-                pred_df = df_view[["published_date", "close", "next_close"]].dropna().set_index("published_date")
-                pred_df.columns = ["Actual Close", "Predicted Next Close"]
+            # Real model predictions (trained model applied to each row's features)
+            df_view_pred = df_view.copy()
+            has_model = ml_model is not None and all(f in df_view_pred.columns for f in ml_features)
+            if has_model:
+                feat_df = df_view_pred[ml_features]
+                valid_mask = feat_df.notna().all(axis=1)
+                df_view_pred.loc[valid_mask, "model_pred_next_close"] = ml_model.predict(feat_df[valid_mask])
+
+            if has_model and "next_close" in df_view_pred.columns:
+                st.markdown(f"#### Model Prediction vs Actual Next-Day Close ({ml_model_name})")
+                pred_df = df_view_pred[["published_date", "next_close", "model_pred_next_close"]].dropna().set_index("published_date")
+                pred_df.columns = ["Actual Next Close", "Model Predicted Next Close"]
                 st.line_chart(pred_df, height=250, use_container_width=True)
 
-                # Simple accuracy metrics
+                # Real model accuracy metrics
                 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-                st.markdown("#### Prediction Accuracy")
-                diff = pred_df["Actual Close"] - pred_df["Predicted Next Close"]
+                st.markdown("#### Prediction Accuracy (Model vs Actual)")
+                diff = pred_df["Actual Next Close"] - pred_df["Model Predicted Next Close"]
                 mae  = diff.abs().mean()
                 rmse = np.sqrt((diff**2).mean())
-                mape = (diff.abs() / pred_df["Actual Close"]).mean() * 100
+                mape = (diff.abs() / pred_df["Actual Next Close"]).mean() * 100
 
                 m1, m2, m3 = st.columns(3)
                 m1.metric("MAE (NPR)", f"{mae:.2f}")
                 m2.metric("RMSE (NPR)", f"{rmse:.2f}")
                 m3.metric("MAPE", f"{mape:.2f}%")
+            elif not has_model:
+                st.info("Trained model not found — showing historical data only. Run `weekly_training_dag` to train a model.")
 
-            # Latest prediction
+            # Latest prediction (live model inference on the most recent row)
             st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
             st.markdown("#### Latest Data Point")
-            last = df_view.iloc[-1]
+            last = df_view_pred.iloc[-1]
             l1, l2, l3 = st.columns(3)
             l1.metric("Date", str(last["published_date"].date()))
             l2.metric("Close (NPR)", f"{last['close']:,.2f}" if pd.notna(last.get("close")) else "—")
-            if "next_close" in last and pd.notna(last["next_close"]):
-                delta = last["next_close"] - last["close"]
-                l3.metric("Predicted Next Close", f"{last['next_close']:,.2f}", delta=f"{delta:+.2f}")
+            if pd.notna(last.get("model_pred_next_close")):
+                delta = last["model_pred_next_close"] - last["close"]
+                l3.metric("Predicted Next Close", f"{last['model_pred_next_close']:,.2f}", delta=f"{delta:+.2f}")
+            else:
+                l3.metric("Predicted Next Close", "—")
 
             # Raw data table
             with st.expander("View raw data table"):

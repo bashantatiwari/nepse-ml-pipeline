@@ -1,7 +1,7 @@
 x-airflow-env: &airflow-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
   AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/airflow/dags
-  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-metadata:3306/airflow_db"
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb-metadata:3306/airflow_db?client_flag=65536"
   AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho="
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   AIRFLOW__WEBSERVER__SECRET_KEY: "nabil-mlops-secret"
