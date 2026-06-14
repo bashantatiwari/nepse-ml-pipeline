@@ -52,7 +52,7 @@ class ColumnStoreClient:
 
     def init_tables(self):
         """
-        Creates warehouse tables using InnoDB for stable Docker implementation testing.
+        Creates warehouse tables using ColumnStore for stable Docker implementation testing.
         ColumnStore limitations:
           - No UNIQUE KEY constraints
           - No AUTO_INCREMENT
@@ -72,7 +72,7 @@ class ColumnStoreClient:
                 traded_quantity DOUBLE,
                 traded_amount DOUBLE,
                 status VARCHAR(20)
-            ) ENGINE=InnoDB
+            ) ENGINE=ColumnStore
             """,
             """
             CREATE TABLE IF NOT EXISTS processed_nabil_features (
@@ -97,7 +97,7 @@ class ColumnStoreClient:
                 next_close DOUBLE,
                 target_change DOUBLE,
                 target_pct_change DOUBLE
-            ) ENGINE=InnoDB
+            ) ENGINE=ColumnStore
             """,
             """
             CREATE TABLE IF NOT EXISTS predictions (
@@ -109,7 +109,7 @@ class ColumnStoreClient:
                 predicted_pct_change DOUBLE,
                 model_version VARCHAR(50),
                 created_at DATE
-            ) ENGINE=InnoDB
+            ) ENGINE=ColumnStore
             """
         ]
         with self.get_connection() as conn:
