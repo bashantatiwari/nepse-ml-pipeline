@@ -1,8 +1,0 @@
-{
-    "company": "NABIL",
-    "latest_close": 518.0,
-    "predicted_next_close": 520.27,
-    "predicted_change": 2.27,
-    "predicted_pct_change": 0.44,
-    "model_version": "LinearRegression"
-}
