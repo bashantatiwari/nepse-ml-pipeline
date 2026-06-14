@@ -15,45 +15,47 @@ default_args = {
 def generate_and_save_prediction():
     from src.config.settings import PROCESSED_DATA_DIR
     from src.serving.prediction_service import PredictionService
-    from src.storage.mariadb_client import MariaDBClient
+    from src.storage.columnstore_client import ColumnStoreClient
 
     logger = logging.getLogger(__name__)
 
     # Ensure tables exist
-    MariaDBClient().init_tables()
+    ColumnStoreClient().init_tables()
 
     service = PredictionService()
     result = service.predict_next_close()
 
-    db_client = MariaDBClient()
+    db_client = ColumnStoreClient()
     try:
         with db_client.get_connection() as conn:
             cursor = conn.cursor()
-            query = """
-                INSERT INTO predictions (
-                    symbol, prediction_date, latest_close, predicted_next_close,
-                    predicted_change, predicted_pct_change, model_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                    latest_close=VALUES(latest_close),
-                    predicted_next_close=VALUES(predicted_next_close),
-                    predicted_change=VALUES(predicted_change),
-                    predicted_pct_change=VALUES(predicted_pct_change),
-                    model_version=VALUES(model_version)
-            """
-            cursor.execute(query, (
-                result["company"],
-                date.today(),
-                result["latest_close"],
-                result["predicted_next_close"],
-                result["predicted_change"],
-                result["predicted_pct_change"],
-                result["model_version"]
-            ))
-            conn.commit()
-            logger.info("Saved prediction successfully to MariaDB.")
+            # ColumnStore has no ON DUPLICATE KEY — deduplicate at application layer
+            cursor.execute(
+                "SELECT COUNT(*) FROM predictions WHERE symbol=? AND prediction_date=?",
+                (result["company"], date.today())
+            )
+            if cursor.fetchone()[0] == 0:
+                query = """
+                    INSERT INTO predictions (
+                        symbol, prediction_date, latest_close, predicted_next_close,
+                        predicted_change, predicted_pct_change, model_version, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(query, (
+                    result["company"],
+                    date.today(),
+                    result["latest_close"],
+                    result["predicted_next_close"],
+                    result["predicted_change"],
+                    result["predicted_pct_change"],
+                    result["model_version"],
+                    date.today()
+                ))
+                logger.info("Saved prediction successfully to ColumnStore.")
+            else:
+                logger.info("Prediction for today already exists, skipping insert.")
     except Exception as e:
-        logger.error(f"Failed to save prediction to MariaDB: {e}")
+        logger.error(f"Failed to save prediction to ColumnStore: {e}")
         raise
 
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
