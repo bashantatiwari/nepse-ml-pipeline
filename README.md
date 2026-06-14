@@ -1,116 +1,69 @@
-# NEPSE MLOps Pipeline (NABIL Time-Series Regression)
+# NEPSE ML Pipeline — NABIL Bank Closing Price Prediction
 
-## Project Overview
-This project refactors a historical multi-company stock classification tool into a focused, production-grade MLOps pipeline for **NABIL Bank (NABIL)**. It implements continuous data ingestion, chronological feature engineering, automated model selection, inference serving, and data drift monitoring. 
+An end-to-end MLOps pipeline that predicts the next-day closing price of NABIL Bank stock using historical NEPSE data.
 
-### Why NABIL?
-NABIL is one of the highest-volume and most consistent blue-chip stocks on the Nepal Stock Exchange (NEPSE). Focusing on a single, high-liquidity stock reduces external sector-noise and allows for a pure time-series forecasting approach.
+## Stack
 
-### Why Time-Series Regression?
-The previous pipeline used binary classification (Predicting UP or DOWN). This has been upgraded to a **Regression** problem. Predicting the exact future value allows downstream systems to calculate risk, profit margins, and execute threshold-based algorithmic trading rather than guessing blindly on binary outcomes.
+| Layer | Tool |
+|---|---|
+| Orchestration | Apache Airflow |
+| Data warehouse | MariaDB ColumnStore |
+| Metadata / tracking | MariaDB (InnoDB) + MLflow |
+| Cache | Redis |
+| Serving | FastAPI |
+| Monitoring | Evidently AI |
+| Dashboard | Streamlit |
 
-### The Regression Targets
-To prevent data leakage, targets are engineered strictly chronologically:
-- `next_close`: The absolute closing price for the *next* trading day (`close.shift(-1)`). This is the direct prediction target.
-- `target_change`: The absolute difference between tomorrow's close and today's close.
-- `target_pct_change`: The percentage difference.
-
----
-
-## Architecture
-
-```text
-  [NABIL.csv] 
-       │ (Daily Airflow Cron)
-       ▼
-[MariaDB ColumnStore (Raw Table)] 
-       │ (Preprocessing & Lags)
-       ▼
-[Redis Cache] ──▶ [MariaDB (Processed Table)]
-       │
-       ▼ (Weekly Airflow Cron)
-[Train: Baseline / LinReg / RandomForest]
-       │
-       ├─▶ [MLflow Registry (Metrics & Artifacts)]
-       │
-       ▼
-[FastAPI Serving Layer] ◀── [Client Requests]
-       │
-       ▼ (Daily Airflow Cron)
-[Evidently AI (Data Drift HTML Reports)]
-```
-
-*Note: For coursework stability on Linux/Docker, a standard MariaDB 11 image is utilized under the `mariadb-columnstore` service name. This provides immediate compatibility with Airflow's backend and standard Python connectors while mimicking the columnar interface.*
-
----
-
-## Workflow: Windows → GitHub → Linux
-
-The development lifecycle for this project involves:
-1. **Restructuring on Windows**: Code is written and tested locally. Models gracefully fallback to CSVs if DBs are missing.
-2. **Push to GitHub**: Changes are committed to the `refactor-nabil-ml-pipeline` branch.
-3. **Deploy to Linux (Docker)**: The environment is spun up seamlessly via `docker-compose`.
-
-### Linux Setup Commands
+## Getting started
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/nepse-ml-pipeline.git
+git clone https://github.com/bashantatiwari/nepse-ml-pipeline.git
 cd nepse-ml-pipeline
-
-# 2. Checkout the correct branch
 git checkout refactor-nabil-ml-pipeline
-
-# 3. Setup environment variables
 cp .env.example .env
-
-# 4. Boot the MLOps infrastructure
 docker compose up -d --build
 ```
 
-### URLs & Ports
+| Service | URL |
+|---|---|
+| Airflow | http://localhost:8080 (airflow / airflow) |
+| MLflow | http://localhost:5000 |
+| FastAPI | http://localhost:8000/docs |
+| Streamlit | http://localhost:8501 |
 
-Once Docker is running, the services are available at:
-- **FastAPI (Swagger UI)**: http://localhost:8000/docs
-- **MLflow Tracking**: http://localhost:5000
-- **Airflow Web UI**: http://localhost:8080 (Login: `airflow` / `airflow`)
+## Pipeline
 
----
+Two Airflow DAGs run on schedule:
 
-## Manual Execution Commands
+- `daily_prediction_dag` — runs at 18:00 daily. Ingests raw prices → engineers features → generates and stores next-day prediction → runs Evidently drift report.
+- `weekly_training_dag` — runs at 18:00 every Sunday. Retrains models on full dataset → logs metrics to MLflow → selects best model by RMSE.
 
-You can run individual pipeline modules manually. If executing locally on Windows (without Docker), ensure your `PYTHONPATH` includes the project root.
+## Project structure
 
-```bash
-# 1. Ingestion
-python -m src.ingestion.load_to_mariadb
-
-# 2. Feature Engineering
-python -m src.preprocessing.feature_engineering
-
-# 3. Model Training
-python -m src.training.train_model
-
-# 4. Monitoring (Evidently Report)
-python -m src.monitoring.evidently_report
-
-# 5. Standalone FastAPI Server
-uvicorn src.serving.main:app --host 0.0.0.0 --port 8000
+```
+airflow/dags/        # DAG definitions
+src/
+  ingestion/         # Load raw CSV into ColumnStore
+  preprocessing/     # Feature engineering (rolling windows, lag features)
+  training/          # Model training and evaluation
+  serving/           # FastAPI app
+  monitoring/        # Evidently drift reports
+  storage/           # ColumnStore and Redis clients
+  registry/          # MLflow utilities
+docker/              # MariaDB and ColumnStore init scripts
+data/raw/            # Seed data (NABIL.csv)
 ```
 
----
+## API endpoints
 
-## Uncommitted Artifacts
+```
+GET  /health     # Model load status
+POST /predict    # Next-day closing price prediction
+GET  /monitor    # Latest drift report summary
+```
 
-The following directories and files are dynamically generated and intentionally ignored by Git (`.gitignore`):
-- `.env` (Credentials)
-- `mlruns/` (Local MLflow SQLite/Artifacts)
-- `models/*.joblib` and `models/*.json` (Heavy serialized models)
-- `reports/monitoring/*.html` (Dynamic HTML reports)
-- `data/processed/` (Intermediate datasets)
+## Known limitations
 
-## Troubleshooting
-
-- **FastAPI starts but `/predict` fails**: Ensure the model is trained. Run `python -m src.training.train_model` to generate `models/best_model.joblib`.
-- **Airflow Webserver keeps restarting**: Ensure MariaDB is fully healthy. Docker Compose is set up to wait, but slower systems might require a restart: `docker compose restart airflow-webserver`.
-- **Evidently AI ImportError**: Ensure you are running `evidently>=0.4.0` as pinned in `requirements.txt`.
+- `data/raw/NABIL.csv` is static seed data — no live scraping in the current version
+- MLflow artifact upload fails due to a UID mismatch between containers (`/mlflow` permission denied)
+- CMAPI server is not running in the ColumnStore container — not required for table operations
