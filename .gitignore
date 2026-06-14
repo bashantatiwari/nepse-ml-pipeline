@@ -42,4 +42,7 @@ reports/evaluation/*.json
 
 # Secrets / environment variables
 .env
-*.env
+*.envairflow.cfg
+webserver_config.py
+logs/
+reports/

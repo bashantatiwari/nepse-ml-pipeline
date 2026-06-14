@@ -12,7 +12,6 @@ default_args = {
     "retries": 1,
 }
 
-
 def generate_and_save_prediction():
     from src.config.settings import PROCESSED_DATA_DIR
     from src.serving.prediction_service import PredictionService
