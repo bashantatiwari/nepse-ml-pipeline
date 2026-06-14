@@ -232,7 +232,7 @@ services:
       mariadb-columnstore:
         condition: service_healthy
       redis:
-      condition: service_healthy
+        condition: service_healthy
       
 volumes:
   mariadb_metadata_data:
