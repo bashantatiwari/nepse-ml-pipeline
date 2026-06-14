@@ -15,6 +15,11 @@ from src.utils.params import getParams
 
 
 RAW_COMPANY_DATA_DIR = PROJECT_ROOT / "data" / "raw" / "company-wise"
+RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
+
+# Symbols to automatically copy to data/raw/ after fetching
+# Add more symbols here if you want to extend the pipeline to other companies
+TARGET_SYMBOLS = ["NABIL"]
 
 
 CONNECT_TIMEOUT = 30
@@ -355,6 +360,14 @@ def fetch_company_historical_data(company_symbol: str, company_id: int) -> None:
 
     print(f"Saved final {company_symbol} data to: {final_output_path}")
     print("Collection completed.")
+
+    # Copy to data/raw/ if this is a target symbol for the pipeline
+    if company_symbol in TARGET_SYMBOLS:
+        import shutil
+        pipeline_path = RAW_DATA_DIR / f"{company_symbol}.csv"
+        shutil.copy2(final_output_path, pipeline_path)
+        print(f"Copied {company_symbol}.csv to pipeline data dir: {pipeline_path}")
+
     print("........................................")
 
 

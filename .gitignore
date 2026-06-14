@@ -47,3 +47,4 @@ webserver_config.py
 logs/
 reports/
 airflow.cfg
+data/processed/nepse_merged_historical_data.csv
