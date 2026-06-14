@@ -46,3 +46,4 @@ reports/evaluation/*.json
 webserver_config.py
 logs/
 reports/
+airflow.cfg
