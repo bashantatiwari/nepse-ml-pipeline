@@ -129,11 +129,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MARIADB_HOST: "mariadb-metadata"
-      MARIADB_PORT: "3306"
-      MARIADB_USER: "${MARIADB_USER}"
-      MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
-      MARIADB_DATABASE: "${MARIADB_DATABASE}"
       COLUMNSTORE_HOST: "mariadb-columnstore"
       COLUMNSTORE_PORT: "3306"
       COLUMNSTORE_USER: "${COLUMNSTORE_USER}"
@@ -233,7 +228,12 @@ services:
       - ./data:/app/data:ro
       - ./models:/app/models:ro
     restart: unless-stopped
-
+    depends_on:
+      mariadb-columnstore:
+        condition: service_healthy
+      redis:
+      condition: service_healthy
+      
 volumes:
   mariadb_metadata_data:
   columnstore_cs_data:
