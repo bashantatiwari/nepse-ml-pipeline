@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from src.serving.prediction_service import PredictionService
 from src.serving.schemas import HealthResponse, PredictionResponse, MonitorResponse
-from src.storage.mariadb_client import MariaDBClient
+from src.storage.columnstore_client import ColumnStoreClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -24,11 +24,11 @@ prediction_service = None
 def startup_event():
     global prediction_service
     try:
-        db = MariaDBClient()
+        db = ColumnStoreClient()
         db.init_tables()
-        logger.info("MariaDB tables initialized successfully.")
+        logger.info("ColumnStore tables initialized successfully.")
     except Exception as e:
-        logger.error(f"MariaDB table initialization failed: {e}")
+        logger.error(f"ColumnStore table initialization failed: {e}")
     try:
         prediction_service = PredictionService()
         logger.info("Prediction service initialized successfully on startup.")
@@ -70,7 +70,6 @@ def predict():
 @app.get("/monitor", response_model=MonitorResponse)
 def monitor():
     """Returns the latest Evidently monitoring summary including drift detection and retraining recommendations."""
-    # Check shared volume path first, then local fallback
     candidates = [
         Path("/opt/airflow/reports/monitoring/monitoring_summary.json"),
         Path("/app/reports/monitoring/monitoring_summary.json"),
@@ -80,7 +79,6 @@ def monitor():
         if p.exists():
             summary_path = p
             break
-
     if summary_path is None:
         raise HTTPException(
             status_code=404,
